@@ -25,10 +25,13 @@
   .progress-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.4s ease; }
   .progress-txt { font-size: 12px; color: var(--ink3); min-width: 40px; text-align: right; }
   .main { width: 100%; max-width: 560px; padding: 1.5rem 1.25rem 2rem; flex: 1; display: flex; flex-direction: column; }
-  .loading { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
-  .spinner { width: 32px; height: 32px; border: 2.5px solid var(--accent-light); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+  .car-stage { width: 260px; height: 56px; position: relative; overflow: hidden; }
   .loading-msg { font-size: 14px; color: var(--ink2); }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 0.8s ease-in-out infinite; }
+  .dot:nth-child(2){animation-delay:.15s} .dot:nth-child(3){animation-delay:.3s}
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
   .card-scene { perspective: 1200px; height: 280px; margin-bottom: 1.25rem; cursor: pointer; }
   .card-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 0.45s cubic-bezier(.4,0,.2,1); }
   .card-inner.flipped { transform: rotateY(180deg); }
@@ -70,8 +73,6 @@
   .history-count { color: var(--ink); font-weight: 500; }
   .counter-txt { text-align: center; font-size: 13px; color: var(--ink3); }
   .err-txt { font-size: 13px; color: var(--again); margin-top: 4px; }
-
-  /* 単語帳 */
   .vocab-screen { width: 100%; max-width: 560px; padding: 1.5rem 1.25rem 2rem; }
   .vocab-header { display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem; }
   .btn-back { background: none; border: none; font-size: 14px; color: var(--accent); cursor: pointer; padding: 0; }
@@ -90,7 +91,6 @@
   .vocab-again { color: var(--again); }
   .vocab-date { color: var(--ink3); margin-left: auto; }
   .empty-msg { text-align: center; padding: 3rem 0; font-size: 14px; color: var(--ink3); }
-
   @media (max-width: 400px) { .word { font-size: 28px; } .card-scene { height: 260px; } }
 </style>
 </head>
@@ -119,8 +119,24 @@
 <!-- LOADING -->
 <div class="main" id="screen-loading" style="display:none;">
   <div class="loading">
-    <div class="spinner"></div>
-    <div class="loading-msg">AIが10語を選んでいます…</div>
+    <div class="car-stage">
+      <svg id="car-svg" style="position:absolute;bottom:4px;" width="72" height="44" viewBox="0 0 72 44">
+        <rect id="car-body" x="4" y="18" width="64" height="18" rx="4" fill="#E24B4A"/>
+        <rect id="car-roof" x="16" y="8" width="36" height="14" rx="4" fill="#E24B4A"/>
+        <rect x="18" y="10" width="14" height="10" rx="2" fill="#B5D4F4" opacity="0.85"/>
+        <rect x="36" y="10" width="13" height="10" rx="2" fill="#B5D4F4" opacity="0.85"/>
+        <circle cx="18" cy="38" r="6" fill="#2C2C2A"/>
+        <circle cx="18" cy="38" r="3" fill="#D3D1C7"/>
+        <circle cx="54" cy="38" r="6" fill="#2C2C2A"/>
+        <circle cx="54" cy="38" r="3" fill="#D3D1C7"/>
+        <rect x="2" y="24" width="6" height="4" rx="1" fill="#FAC775"/>
+        <rect x="64" y="24" width="6" height="4" rx="1" fill="#F09595"/>
+      </svg>
+    </div>
+    <div class="loading-msg" id="loading-msg">AIが単語を選んでいます…</div>
+    <div class="dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
   </div>
 </div>
 
@@ -199,6 +215,48 @@ function saveStorage(d) { localStorage.setItem('vocab_app', JSON.stringify(d)); 
 
 let queue=[], again=[], goodCount=0, current=null, flipped=false;
 let currentTab = 'all';
+let carAnim = null;
+
+const carColors = ['#E24B4A', '#EEEEEE', '#378ADD', '#444441'];
+const loadingMsgs = ['AIが単語を選んでいます…','難しい漢語を探し中…','四字熟語もピックアップ中…','もう少しで完成です…'];
+let carColorIdx = 0;
+let carMsgIdx = 0;
+let carX = -72;
+
+function setCarColor(c) {
+  const body = document.getElementById('car-body');
+  const roof = document.getElementById('car-roof');
+  if (body) body.setAttribute('fill', c);
+  if (roof) roof.setAttribute('fill', c);
+}
+
+function startCarAnim() {
+  carX = -72;
+  carColorIdx = 0;
+  carMsgIdx = 0;
+  setCarColor(carColors[0]);
+  const car = document.getElementById('car-svg');
+  const stageW = 260;
+  const carW = 72;
+  function step() {
+    carX += 2.4;
+    if (car) car.style.left = carX + 'px';
+    if (carX > stageW) {
+      carX = -carW;
+      carColorIdx = (carColorIdx + 1) % carColors.length;
+      carMsgIdx = (carMsgIdx + 1) % loadingMsgs.length;
+      setCarColor(carColors[carColorIdx]);
+      const msg = document.getElementById('loading-msg');
+      if (msg) msg.textContent = loadingMsgs[carMsgIdx];
+    }
+    carAnim = requestAnimationFrame(step);
+  }
+  carAnim = requestAnimationFrame(step);
+}
+
+function stopCarAnim() {
+  if (carAnim) { cancelAnimationFrame(carAnim); carAnim = null; }
+}
 
 function init() {
   const d = getStorage();
@@ -220,20 +278,23 @@ function renderHistory(history) {
 async function startSession() {
   const btn = document.getElementById('btn-generate');
   const err = document.getElementById('start-err');
-  if (btn) { btn.disabled=true; }
-  if (err) { err.style.display='none'; }
+  if (btn) btn.disabled=true;
+  if (err) err.style.display='none';
   show('loading');
+  startCarAnim();
   try {
     const res = await fetch('/api/generate', { method:'POST' });
     if (!res.ok) throw new Error('サーバーエラー: ' + res.status);
     const data = await res.json();
     if (!data.words) throw new Error('単語データが取得できませんでした');
     queue=[...data.words]; again=[]; goodCount=0; flipped=false;
+    stopCarAnim();
     show('cards'); nextCard();
   } catch(e) {
+    stopCarAnim();
     show('start');
     if (err) { err.textContent='生成に失敗しました。しばらく待ってもう一度お試しください。'; err.style.display='block'; }
-    if (btn) { btn.disabled=false; }
+    if (btn) btn.disabled=false;
   }
 }
 
@@ -330,7 +391,6 @@ function renderVocab(tab) {
   if (tab==='good') filtered = words.filter(w => w.goodCount > 0 && w.againCount === 0);
   if (tab==='weak') filtered = words.filter(w => w.againCount > 0);
   filtered.sort((a,b) => b.againCount - a.againCount);
-
   const list = document.getElementById('vocab-list');
   if (!filtered.length) {
     list.innerHTML = `<div class="empty-msg">${tab==='all' ? 'まだ単語がありません。<br>トレーニングを始めましょう！' : '該当する単語はありません'}</div>`;
